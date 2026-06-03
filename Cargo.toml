@@ -1,6 +1,6 @@
 [package]
 name = "trex"
-version = "0.6.1"
+version = "0.6.15"
 edition = "2021"
 description = "Tmux Restore Extreme - persist and restore tmux sessions"
 authors = ["Taha Sadough"]
