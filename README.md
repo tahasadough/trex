@@ -13,12 +13,6 @@ curl -fsSL https://raw.githubusercontent.com/tahasadough/trex/main/install.sh > 
 bash install.sh
 ```
 
-Or in one line (note: piping to `bash` will skip the auto-restore prompt):
-
-```sh
-bash <(curl -fsSL https://raw.githubusercontent.com/tahasadough/trex/main/install.sh)
-```
-
 Or clone and run the installer:
 
 ```sh
