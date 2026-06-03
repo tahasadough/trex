@@ -181,7 +181,7 @@ main() {
 
   ensure_path
 
-  if command -v systemctl &>/dev/null; then
+  if [ "${TREX_UPDATE:-0}" != "1" ] && command -v systemctl &>/dev/null; then
     echo ""
     read -r -p "Enable auto-restore on reboot? [Y/n] " reply </dev/tty
     case "$reply" in

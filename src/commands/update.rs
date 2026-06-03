@@ -43,6 +43,7 @@ fn run_script(script: &[u8]) -> TrexResult<String> {
 
     let mut child = std::process::Command::new("bash")
         .arg(tmp.path())
+        .env("TREX_UPDATE", "1")
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
