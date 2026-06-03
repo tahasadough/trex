@@ -43,15 +43,11 @@ fn run_script(script: &[u8]) -> TrexResult<String> {
 
     let mut child = std::process::Command::new("bash")
         .arg(tmp.path())
-        .stdin(std::process::Stdio::piped())
+        .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
         .spawn()
         .map_err(|e| TrexError::UpdateFailed(format!("Failed to spawn install script: {e}")))?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(b"n\n");
-    }
 
     let status = child
         .wait()
