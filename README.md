@@ -9,8 +9,7 @@ Persist your tmux sessions across reboots. Windows, panes, layouts, working dire
 ### Prebuilt binary (recommended — no Rust needed)
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/tahasadough/trex/main/install.sh > install.sh
-bash install.sh
+curl -fsSL https://raw.githubusercontent.com/tahasadough/trex/main/install.sh | bash
 ```
 
 Or clone and run the installer:

@@ -183,7 +183,7 @@ main() {
 
   if command -v systemctl &>/dev/null; then
     echo ""
-    read -r -p "Enable auto-restore on reboot? [Y/n] " reply
+    read -r -p "Enable auto-restore on reboot? [Y/n] " reply </dev/tty
     case "$reply" in
       n|N|no|NO)
         echo "Skipping auto-restore."
@@ -194,6 +194,8 @@ main() {
 
   echo ""
   echo "Install complete. Run 'trex --help' or 'man trex' to get started."
+
+  [[ -f "$0" ]] && rm -- "$0"
 }
 
 main
