@@ -59,6 +59,7 @@ fn auto_disable_noop_when_not_configured() {
 
 #[serial]
 #[test]
+#[cfg(target_os = "linux")]
 fn systemd_service_path_format() {
     with_temp_home(|| {
         let path = trex::commands::auto::systemd_service_path();

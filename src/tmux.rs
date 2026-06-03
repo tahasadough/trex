@@ -420,6 +420,7 @@ impl TmuxClient for Tmux {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn get_process_command(pid: &str) -> Option<String> {
     let output = Command::new("ps")
         .args(["-o", "args=", "-p", pid])
@@ -434,6 +435,32 @@ fn get_process_command(pid: &str) -> Option<String> {
     None
 }
 
+#[cfg(target_os = "macos")]
+fn get_process_command(pid: &str) -> Option<String> {
+    let output = Command::new("ps")
+        .args(["-p", pid, "-o", "command"])
+        .output()
+        .ok()?;
+    if output.status.success() {
+        let cmd = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .nth(1)
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if !cmd.is_empty() {
+            return Some(cmd);
+        }
+    }
+    None
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn get_process_command(_pid: &str) -> Option<String> {
+    None
+}
+
+#[cfg(target_os = "linux")]
 fn get_child_pids(pid: &str) -> Option<Vec<String>> {
     let output = Command::new("pgrep").args(["-P", pid]).output().ok()?;
     if output.status.success() {
@@ -446,6 +473,37 @@ fn get_child_pids(pid: &str) -> Option<Vec<String>> {
             return Some(children);
         }
     }
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn get_child_pids(pid: &str) -> Option<Vec<String>> {
+    let output = Command::new("ps").args(["-eo", "pid,ppid"]).output().ok()?;
+    if output.status.success() {
+        let pid_trimmed = pid.trim();
+        let children: Vec<String> = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .skip(1)
+            .filter_map(|line| {
+                let mut parts = line.split_whitespace();
+                let child_pid = parts.next()?;
+                let parent_pid = parts.next()?;
+                if parent_pid.trim() == pid_trimmed {
+                    Some(child_pid.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if !children.is_empty() {
+            return Some(children);
+        }
+    }
+    None
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn get_child_pids(_pid: &str) -> Option<Vec<String>> {
     None
 }
 
@@ -659,5 +717,54 @@ mod tests {
     #[test]
     fn parse_u32_handles_whitespace() {
         assert_eq!(parse_u32("  7  "), 7);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn get_process_command_returns_cmd_for_current_pid() {
+        let pid = std::process::id().to_string();
+        let cmd = get_process_command(&pid);
+        assert!(cmd.is_some());
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn get_process_command_returns_cmd_for_current_pid() {
+        let pid = std::process::id().to_string();
+        let cmd = get_process_command(&pid);
+        assert!(cmd.is_some());
+    }
+
+    #[test]
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    fn get_process_command_returns_none_on_unsupported() {
+        assert!(get_process_command("1").is_none());
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn get_child_pids_returns_children_for_init() {
+        let children = get_child_pids("1");
+        assert!(children.is_some());
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn get_child_pids_returns_children_for_init() {
+        let children = get_child_pids("1");
+        assert!(children.is_some());
+    }
+
+    #[test]
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    fn get_child_pids_returns_none_on_unsupported() {
+        assert!(get_child_pids("1").is_none());
+    }
+
+    #[test]
+    fn find_deepest_child_returns_current_pid_when_no_children() {
+        let pid = std::process::id().to_string();
+        let deepest = find_deepest_child(&pid);
+        assert!(!deepest.is_empty());
     }
 }

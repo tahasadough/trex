@@ -15,7 +15,7 @@ trex/
 │   ├── error.rs         — TrexError enum + TrexResult<T> alias
 │   ├── model.rs         — Sessions, SavedSession, SavedWindow, SavedPane
 │   ├── storage.rs       — filesystem helpers (trex_dir, load/save sessions + ignore list)
-│   ├── tmux.rs          — TmuxClient trait + Tmux (real) + MockTmux (test double)
+│   ├── tmux.rs          — TmuxClient trait + Tmux (real) + MockTmux (test double); cross-platform ps/pgrep
 │   ├── test_helpers.rs  — with_trex_dir, with_temp_home
 │   └── commands/
 │       ├── mod.rs       — execute() dispatcher

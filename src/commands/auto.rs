@@ -94,14 +94,7 @@ pub fn execute_disable() -> TrexResult<String> {
         }
     }
 
-    let service_path = systemd_service_path();
-    if service_path.exists() {
-        let _ = fs::remove_file(&service_path);
-        let _ = std::process::Command::new("systemctl")
-            .args(["--user", "daemon-reload"])
-            .output();
-        messages.push("Disabled systemd auto-restore service".to_string());
-    }
+    disable_systemd_service(&mut messages);
 
     if messages.is_empty() {
         Ok("No auto-restore configuration found.".to_string())
@@ -111,10 +104,26 @@ pub fn execute_disable() -> TrexResult<String> {
 }
 
 #[must_use]
+#[cfg(target_os = "linux")]
 pub fn systemd_service_path() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     home.join(".config/systemd/user/trex.service")
 }
+
+#[cfg(target_os = "linux")]
+fn disable_systemd_service(messages: &mut Vec<String>) {
+    let service_path = systemd_service_path();
+    if service_path.exists() {
+        let _ = fs::remove_file(&service_path);
+        let _ = std::process::Command::new("systemctl")
+            .args(["--user", "daemon-reload"])
+            .output();
+        messages.push("Disabled systemd auto-restore service".to_string());
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn disable_systemd_service(_messages: &mut Vec<String>) {}
 
 #[cfg(test)]
 mod tests {
@@ -193,6 +202,7 @@ mod tests {
 
     #[serial]
     #[test]
+    #[cfg(target_os = "linux")]
     fn systemd_service_path_returns_correct_path() {
         with_temp_home(|| {
             let home = std::env::var("HOME").unwrap();
