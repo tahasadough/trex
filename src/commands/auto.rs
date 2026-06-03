@@ -1,0 +1,206 @@
+use std::fs;
+use std::io::Write;
+use std::path::PathBuf;
+
+use crate::error::TrexResult;
+
+const HOOK_COMMENT: &str = "# trex: auto-restore tmux sessions";
+const HOOK_LINE: &str = "command -v trex &>/dev/null && trex restore --quiet";
+
+fn shell_rc_files() -> Vec<PathBuf> {
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let zdotdir = std::env::var("ZDOTDIR")
+        .ok()
+        .map_or_else(|| home.clone(), PathBuf::from);
+
+    vec![
+        zdotdir.join(".zshrc"),
+        home.join(".bashrc"),
+        home.join(".profile"),
+    ]
+}
+
+fn detect_rc() -> PathBuf {
+    for rc in shell_rc_files() {
+        if !rc.exists() {
+            continue;
+        }
+        if let Ok(content) = fs::read_to_string(&rc) {
+            if content.contains("trex") {
+                return rc;
+            }
+        }
+    }
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+    let shell_name = std::path::Path::new(&shell)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("sh");
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    match shell_name {
+        "zsh" => {
+            let zdotdir = std::env::var("ZDOTDIR").ok().map(PathBuf::from);
+            zdotdir.unwrap_or(home).join(".zshrc")
+        }
+        _ => home.join(".bashrc"),
+    }
+}
+
+/// # Errors
+/// Returns [`TrexError`] if the rc file cannot be read or appended to.
+pub fn execute_enable() -> TrexResult<String> {
+    let rc_file = detect_rc();
+    let content = fs::read_to_string(&rc_file).unwrap_or_default();
+
+    if content.contains(HOOK_LINE) {
+        return Ok(format!(
+            "Auto-restore already configured in {}",
+            rc_file.display()
+        ));
+    }
+
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&rc_file)?;
+
+    writeln!(file)?;
+    writeln!(file, "{HOOK_COMMENT}")?;
+    writeln!(file, "{HOOK_LINE}")?;
+
+    Ok(format!("Auto-restore enabled in {}", rc_file.display()))
+}
+
+/// # Errors
+/// Returns [`TrexError`] if any rc file cannot be read or written.
+pub fn execute_disable() -> TrexResult<String> {
+    let mut messages = Vec::new();
+
+    for rc_file in shell_rc_files() {
+        if !rc_file.exists() {
+            continue;
+        }
+        let content = fs::read_to_string(&rc_file)?;
+        if content.contains(HOOK_LINE) {
+            let filtered: Vec<&str> = content
+                .lines()
+                .filter(|l| !l.contains(HOOK_COMMENT) && !l.contains(HOOK_LINE))
+                .collect();
+            fs::write(&rc_file, filtered.join("\n") + "\n")?;
+            messages.push(format!(
+                "Auto-restore disabled (removed from {})",
+                rc_file.display()
+            ));
+        }
+    }
+
+    let service_path = systemd_service_path();
+    if service_path.exists() {
+        let _ = fs::remove_file(&service_path);
+        let _ = std::process::Command::new("systemctl")
+            .args(["--user", "daemon-reload"])
+            .output();
+        messages.push("Disabled systemd auto-restore service".to_string());
+    }
+
+    if messages.is_empty() {
+        Ok("No auto-restore configuration found.".to_string())
+    } else {
+        Ok(messages.join("\n"))
+    }
+}
+
+#[must_use]
+pub fn systemd_service_path() -> PathBuf {
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    home.join(".config/systemd/user/trex.service")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::with_temp_home;
+    use serial_test::serial;
+
+    #[serial]
+    #[test]
+    fn detect_rc_returns_existing_file_with_trex() {
+        with_temp_home(|| {
+            let home = std::env::var("HOME").unwrap();
+            let zshrc = std::path::Path::new(&home).join(".zshrc");
+            let mut file = fs::File::create(&zshrc).unwrap();
+            writeln!(file, "source /some/stuff").unwrap();
+            writeln!(file, "trex restore --quiet").unwrap();
+
+            let rc = detect_rc();
+            assert_eq!(rc, zshrc);
+        });
+    }
+
+    #[serial]
+    #[test]
+    fn detect_rc_falls_back_to_shell() {
+        with_temp_home(|| {
+            std::env::set_var("SHELL", "/bin/zsh");
+            let home = std::env::var("HOME").unwrap();
+            let rc = detect_rc();
+            assert_eq!(rc, std::path::Path::new(&home).join(".zshrc"));
+        });
+    }
+
+    #[serial]
+    #[test]
+    fn auto_enable_appends_to_rc_file() {
+        with_temp_home(|| {
+            std::env::set_var("SHELL", "/bin/zsh");
+            let result = execute_enable().unwrap();
+            assert!(result.contains("Auto-restore enabled"));
+
+            let home = std::env::var("HOME").unwrap();
+            let rc_path = std::path::Path::new(&home).join(".zshrc");
+            let content = fs::read_to_string(&rc_path).unwrap();
+            assert!(content.contains(HOOK_COMMENT));
+            assert!(content.contains(HOOK_LINE));
+        });
+    }
+
+    #[serial]
+    #[test]
+    fn auto_enable_idempotent() {
+        with_temp_home(|| {
+            std::env::set_var("SHELL", "/bin/bash");
+            execute_enable().unwrap();
+            let result = execute_enable().unwrap();
+            assert!(result.contains("already configured"));
+        });
+    }
+
+    #[serial]
+    #[test]
+    fn auto_disable_removes_hooks() {
+        with_temp_home(|| {
+            std::env::set_var("SHELL", "/bin/bash");
+            execute_enable().unwrap();
+            let result = execute_disable().unwrap();
+            assert!(result.contains("disabled"));
+
+            let home = std::env::var("HOME").unwrap();
+            let rc_path = std::path::Path::new(&home).join(".bashrc");
+            let content = fs::read_to_string(&rc_path).unwrap_or_default();
+            assert!(!content.contains(HOOK_LINE));
+        });
+    }
+
+    #[serial]
+    #[test]
+    fn systemd_service_path_returns_correct_path() {
+        with_temp_home(|| {
+            let home = std::env::var("HOME").unwrap();
+            let path = systemd_service_path();
+            assert_eq!(
+                path,
+                std::path::Path::new(&home).join(".config/systemd/user/trex.service")
+            );
+        });
+    }
+}

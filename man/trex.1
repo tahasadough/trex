@@ -1,0 +1,160 @@
+.\" Man page for trex
+.\" SPDX-License-Identifier: MIT OR Apache-2.0
+.TH TREX 1 "2026-06-03" "trex" "User Commands"
+.SH NAME
+trex \- save, restore, and manage tmux sessions
+.SH SYNOPSIS
+.B trex
+\fIcommand\fR [\fIargs\fR]
+.SH DESCRIPTION
+.B trex
+serializes every tmux session, window, and pane (names, layouts, working
+directories, options, commands) to a JSON file and recreates them later.
+Restore happens in three passes: create sessions and panes, apply layouts
+and options, re-issue running commands.
+.SH COMMANDS
+.TP
+.B save, s
+Save tmux sessions to disk.
+.RS
+.TP
+.B \-c, \-\-current
+Save only the current tmux session.
+.TP
+.BI name
+Save a specific tmux session by name.
+.RE
+.TP
+.B restore, r
+Restore saved tmux sessions.
+.RS
+.TP
+.B \-q, \-\-quiet
+Restore silently. No output and no error on missing data.
+.RE
+.TP
+.B ls, l
+List saved session names.
+.TP
+.B status, st
+Show saved session count and last-saved timestamp.
+.TP
+.B remove, rm
+Remove saved sessions.
+.RS
+.TP
+.B \fIname\fR
+Remove a specific session by name.
+.TP
+.B \-a, \-\-all
+Remove all saved sessions.
+.RE
+.TP
+.B ignore, ig
+Exclude a session from future saves.
+.RS
+.TP
+.B \fIname\fR
+Session name to ignore.
+.TP
+.B \-l, \-\-list
+Show currently ignored sessions.
+.RE
+.TP
+.B unignore, uig
+Stop ignoring a session. It will be included in the next save.
+.TP
+.B auto, a
+Manage auto-restore on shell start.
+.RS
+.TP
+.B enable
+Append a restore hook to \(ti.bashrc / \(ti.zshrc / \(ti.profile.
+.TP
+.B disable
+Remove auto-restore hooks and clean up systemd service.
+.RE
+.TP
+.B update, up
+Download and replace the running binary with the latest release.
+Falls back to \(c8cargo install\(c9 if no prebuilt binary exists.
+.TP
+.B help
+Print help information.
+.SH OPTIONS
+.TP
+.B \-h, \-\-help
+Print help.
+.TP
+.B \-V, \-\-version
+Print version.
+.SH FILES
+.TP
+.I $TREX_DIR/sessions.json
+Saved session data (JSON). Default:
+.IR $XDG_DATA_HOME/trex/sessions.json .
+.TP
+.I $TREX_DIR/ignore
+List of session names to exclude from saves.
+.SH ENVIRONMENT
+.TP
+.B TREX_DIR
+Override the data directory. Defaults to
+.IR $XDG_DATA_HOME/trex .
+.TP
+.B SHELL
+Used by \(c8auto enable\(c9 to pick the correct rc file.
+.TP
+.B ZDOTDIR
+Used to locate .zshrc when SHELL is zsh.
+.SH EXAMPLES
+.PP
+Save all sessions:
+.IP
+trex save
+.PP
+Save only the current session:
+.IP
+trex save \-\-current
+.PP
+Save a specific session:
+.IP
+trex save my-session
+.PP
+Restore all saved sessions:
+.IP
+trex restore
+.PP
+Restore silently (for shell hooks):
+.IP
+trex restore \-\-quiet
+.PP
+List saved session names:
+.IP
+trex ls
+.PP
+Remove a specific session:
+.IP
+trex remove my-session
+.PP
+Wipe all saved data:
+.IP
+trex remove \-\-all
+.PP
+Exclude a session from saves:
+.IP
+trex ignore my-session
+.PP
+Enable auto-restore on login:
+.IP
+trex auto enable
+.PP
+Update to the latest version:
+.IP
+trex update
+.SH AUTHORS
+Taha Sadough <https://github.com/tahasadough>
+.SH REPORTING BUGS
+https://github.com/tahasadough/trex/issues
+.SH SEE ALSO
+.BR tmux (1)
