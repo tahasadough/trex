@@ -68,8 +68,6 @@ Both use `--quiet` so you never see output during startup.
 
 `trex save` serializes every session, window, and pane (names, layouts, directories, options, active panes, running commands) to a JSON file at `$XDG_DATA_HOME/trex/sessions.json`. `trex restore` rebuilds the session tree in three passes: (1) create sessions and split panes, (2) apply layouts and options, (3) re-issue saved commands via `tmux send-keys`.
 
-Non-shell processes (editors, servers, etc.) are detected via `/proc` inspection and their full command-line is captured for replay.
-
 ## Uninstall
 
 ```sh
