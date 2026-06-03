@@ -1,109 +1,147 @@
-use std::os::unix::fs::PermissionsExt;
+use std::env;
+use std::io::{Read, Write};
 
 use crate::error::{TrexError, TrexResult};
 
-const CARGO_INSTALL_URL: &str = "https://github.com/tahasadough/trex";
-const RELEASES_URL: &str = "https://github.com/tahasadough/trex/releases/latest/download/trex";
+const INSTALL_URL: &str = "https://raw.githubusercontent.com/tahasadough/trex/main/install.sh";
 
-fn target_triple() -> Option<String> {
-    let os = std::env::consts::OS;
-    let arch = std::env::consts::ARCH;
-    match (os, arch) {
-        ("linux", "x86_64") => Some("x86_64-unknown-linux-gnu".into()),
-        ("linux", "aarch64") => Some("aarch64-unknown-linux-gnu".into()),
-        ("macos", "x86_64") => Some("x86_64-apple-darwin".into()),
-        ("macos", "aarch64") => Some("aarch64-apple-darwin".into()),
-        _ => None,
-    }
-}
-
-fn download_url() -> Option<String> {
-    let triple = target_triple()?;
-    Some(format!("{RELEASES_URL}-{triple}.tar.gz"))
+pub(crate) fn install_url() -> String {
+    env::var("TREX_UPDATE_URL")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| INSTALL_URL.to_string())
 }
 
 /// # Errors
-/// Returns [`TrexError::UpdateFailed`] if downloading, extracting,
-/// or replacing the binary fails.
-fn update_via_binary() -> TrexResult<String> {
-    let url = download_url()
-        .ok_or_else(|| TrexError::UpdateFailed("No prebuilt binary for this platform".into()))?;
+/// Returns [`TrexError::UpdateFailed`] if downloading or executing
+/// the install script fails.
+pub fn execute() -> TrexResult<String> {
+    let url = install_url();
+    eprintln!("Checking for updates...");
+    download_and_run(&url)
+}
 
-    let self_path = std::env::current_exe()
-        .map_err(|e| TrexError::UpdateFailed(format!("Cannot find own path: {e}")))?;
-
-    let response = ureq::get(&url)
+fn download_and_run(url: &str) -> TrexResult<String> {
+    let response = ureq::get(url)
         .call()
-        .map_err(|e| TrexError::UpdateFailed(format!("Download failed: {e}")))?;
+        .map_err(|e| TrexError::UpdateFailed(format!("Failed to fetch install script: {e}")))?;
 
     let mut reader = response.into_reader();
-    let mut decoder = flate2::read::GzDecoder::new(&mut reader);
-    let mut archive = tar::Archive::new(&mut decoder);
+    let mut script = Vec::new();
+    reader
+        .read_to_end(&mut script)
+        .map_err(|e| TrexError::UpdateFailed(format!("Failed to read install script: {e}")))?;
 
-    let tmp = tempfile::TempDir::new()
-        .map_err(|e| TrexError::UpdateFailed(format!("Temp dir failed: {e}")))?;
-
-    archive
-        .unpack(tmp.path())
-        .map_err(|e| TrexError::UpdateFailed(format!("Extract failed: {e}")))?;
-
-    let binary = tmp.path().join("trex");
-    if !binary.exists() {
-        return Err(TrexError::UpdateFailed(
-            "Binary not found in archive".into(),
-        ));
-    }
-
-    std::fs::rename(&binary, &self_path)
-        .or_else(|_| {
-            std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755))
-                .and_then(|()| std::fs::copy(&binary, &self_path))
-                .map(|_| ())
-        })
-        .map_err(|e| TrexError::UpdateFailed(format!("Replace failed: {e}")))?;
-    Ok("Update complete.".to_string())
+    run_script(&script)
 }
 
-/// # Errors
-/// Returns [`TrexError::UpdateFailed`] if `cargo install` fails or
-/// the `cargo` binary is not found.
-fn update_via_cargo() -> TrexResult<String> {
-    let cargo = std::process::Command::new("cargo")
-        .arg("install")
-        .arg("--force")
-        .arg("--git")
-        .arg(CARGO_INSTALL_URL)
-        .arg("trex")
-        .output()
-        .map_err(|e| TrexError::UpdateFailed(format!("cargo not found: {e}")))?;
+fn run_script(script: &[u8]) -> TrexResult<String> {
+    let mut tmp = tempfile::NamedTempFile::new()
+        .map_err(|e| TrexError::UpdateFailed(format!("Temp file failed: {e}")))?;
+    tmp.write_all(script)
+        .map_err(|e| TrexError::UpdateFailed(format!("Write failed: {e}")))?;
 
-    if cargo.status.success() {
+    let mut child = std::process::Command::new("bash")
+        .arg(tmp.path())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+        .map_err(|e| TrexError::UpdateFailed(format!("Failed to spawn install script: {e}")))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(b"n\n");
+    }
+
+    let status = child
+        .wait()
+        .map_err(|e| TrexError::UpdateFailed(format!("Install script failed: {e}")))?;
+
+    if status.success() {
+        eprintln!("trex has been updated successfully!");
         Ok("Update complete.".to_string())
     } else {
-        let stderr = String::from_utf8_lossy(&cargo.stderr);
-        Err(TrexError::UpdateFailed(format!(
-            "cargo install failed: {stderr}"
-        )))
+        Err(TrexError::UpdateFailed(
+            "Install script exited with an error. Check output above.".into(),
+        ))
     }
-}
-
-/// # Errors
-/// Returns [`TrexError::UpdateFailed`] if downloading, extracting,
-/// or replacing the binary fails.
-pub fn execute() -> TrexResult<String> {
-    eprintln!("Checking for updates...");
-    let result = update_via_binary().or_else(|_| update_via_cargo());
-    if result.is_ok() {
-        eprintln!("trex has been updated successfully!");
-    }
-    result
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use serial_test::serial;
+
     #[test]
-    fn find_self_path_returns_valid_path() {
-        let path = std::env::current_exe().unwrap();
-        assert!(path.exists());
+    fn install_url_default_is_https() {
+        assert!(INSTALL_URL.starts_with("https://"));
+    }
+
+    #[test]
+    #[serial]
+    fn install_url_returns_default_when_no_env() {
+        let prev = env::var("TREX_UPDATE_URL").ok();
+        env::remove_var("TREX_UPDATE_URL");
+        assert_eq!(install_url(), INSTALL_URL);
+        if let Some(v) = prev {
+            env::set_var("TREX_UPDATE_URL", v);
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn install_url_uses_env_var_when_set() {
+        let prev = env::var("TREX_UPDATE_URL").ok();
+        env::set_var("TREX_UPDATE_URL", "http://localhost:9999/test.sh");
+        assert_eq!(install_url(), "http://localhost:9999/test.sh");
+        match prev {
+            Some(v) => env::set_var("TREX_UPDATE_URL", v),
+            None => env::remove_var("TREX_UPDATE_URL"),
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn install_url_falls_back_when_env_is_empty() {
+        let prev = env::var("TREX_UPDATE_URL").ok();
+        env::set_var("TREX_UPDATE_URL", "");
+        assert_eq!(install_url(), INSTALL_URL);
+        match prev {
+            Some(v) => env::set_var("TREX_UPDATE_URL", v),
+            None => env::remove_var("TREX_UPDATE_URL"),
+        }
+    }
+
+    #[test]
+    fn run_script_success_returns_ok() {
+        let script = b"#!/usr/bin/env bash\nexit 0\n";
+        let result = run_script(script);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Update complete.");
+    }
+
+    #[test]
+    fn run_script_failure_returns_error() {
+        let script = b"#!/usr/bin/env bash\nexit 1\n";
+        let result = run_script(script);
+        assert!(result.is_err());
+        match result {
+            Err(TrexError::UpdateFailed(msg)) => {
+                assert!(msg.contains("exited with an error"), "msg: {msg}");
+            }
+            _ => panic!("Expected UpdateFailed error"),
+        }
+    }
+
+    #[test]
+    fn download_and_run_returns_error_for_unreachable_url() {
+        let result = download_and_run("http://127.0.0.1:1/");
+        assert!(result.is_err());
+        match result {
+            Err(TrexError::UpdateFailed(msg)) => {
+                assert!(msg.contains("Failed to fetch"), "msg: {msg}");
+            }
+            _ => panic!("Expected UpdateFailed error"),
+        }
     }
 }

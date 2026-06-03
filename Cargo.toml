@@ -1,6 +1,6 @@
 [package]
 name = "trex"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 description = "Tmux Restore Extreme - persist and restore tmux sessions"
 authors = ["Taha Sadough"]
@@ -17,8 +17,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 dirs = "6"
 ureq = "2"
 tempfile = "3"
-flate2 = "1"
-tar = "0.4"
+
 
 [dev-dependencies]
 serial_test = "3"
