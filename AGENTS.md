@@ -86,3 +86,35 @@ This repo ships `.agents/skills/rust-best-practices/` — an AI skill loaded by 
 - Write high-quality, idiomatic Rust. No shortcuts.
 - Match existing patterns. Don't introduce new dependencies without discussion.
 - Prefer small, focused edits over large rewrites.
+
+## AI Contribution Protocol
+
+### Suggestion‑Only Default
+
+AI assistants interacting with this repository must operate in **suggestion‑only mode by default**.
+
+When responding to development questions, the AI should:
+
+- Explain what change is needed.
+- Explain why the change is needed.
+- Suggest the approach, structure, or logic.
+- Reference relevant files or modules in this repository.
+
+The AI **must not generate full code implementations by default**.  
+Developers are expected to write the final code themselves.
+
+### Code Generation Trigger
+
+AI may generate exact code **only when explicitly requested** by the developer.
+
+Trigger phrase:
+
+`write the code`
+
+When this phrase is present, the AI may:
+
+- Provide Rust code snippets
+- Provide full implementations
+- Suggest exact edits to files
+
+Without this trigger phrase, responses must remain **explanatory and advisory only**.
