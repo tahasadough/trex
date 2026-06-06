@@ -16,7 +16,8 @@ fn auto_enable_creates_rc_hook() {
         let home = dirs::home_dir().unwrap();
         let rc = home.join(".zshrc");
         let content = fs::read_to_string(&rc).unwrap();
-        assert!(content.contains("trex restore --quiet"));
+        assert!(content.contains("restore --quiet"));
+        assert!(content.lines().any(|l| l.starts_with("[ -x \"")));
     });
 }
 
@@ -32,7 +33,7 @@ fn auto_disable_removes_rc_hook() {
         let home = dirs::home_dir().unwrap();
         let rc = home.join(".bashrc");
         let content = fs::read_to_string(&rc).unwrap_or_default();
-        assert!(!content.contains("trex restore --quiet"));
+        assert!(!content.contains("restore --quiet"));
     });
 }
 

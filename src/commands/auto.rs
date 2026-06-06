@@ -1,11 +1,22 @@
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use crate::error::TrexResult;
+use crate::error::{TrexError, TrexResult};
 
 const HOOK_COMMENT: &str = "# trex: auto-restore tmux sessions";
-const HOOK_LINE: &str = "command -v trex &>/dev/null && trex restore --quiet";
+
+fn hook_lines(exe_path: &Path) -> [String; 2] {
+    let exe = exe_path.to_string_lossy();
+    [
+        HOOK_COMMENT.to_string(),
+        format!("[ -x \"{exe}\" ] && \"{exe}\" restore --quiet"),
+    ]
+}
+
+fn is_hook_line(line: &str) -> bool {
+    line == HOOK_COMMENT || (line.contains("restore --quiet") && line.contains("trex"))
+}
 
 fn shell_rc_files() -> Vec<PathBuf> {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -47,12 +58,18 @@ fn detect_rc() -> PathBuf {
 }
 
 /// # Errors
-/// Returns [`TrexError`] if the rc file cannot be read or appended to.
+/// Returns [`TrexError`] if the rc file cannot be read or appended to,
+/// or if the trex binary path cannot be resolved.
 pub fn execute_enable() -> TrexResult<String> {
+    let exe_path = std::env::current_exe().map_err(|e| {
+        TrexError::Generic(format!("Cannot determine trex binary path: {e}"))
+    })?;
+    let [comment_line, command_line] = hook_lines(&exe_path);
+
     let rc_file = detect_rc();
     let content = fs::read_to_string(&rc_file).unwrap_or_default();
 
-    if content.contains(HOOK_LINE) {
+    if content.contains(&comment_line) {
         return Ok(format!(
             "Auto-restore already configured in {}",
             rc_file.display()
@@ -65,8 +82,8 @@ pub fn execute_enable() -> TrexResult<String> {
         .open(&rc_file)?;
 
     writeln!(file)?;
-    writeln!(file, "{HOOK_COMMENT}")?;
-    writeln!(file, "{HOOK_LINE}")?;
+    writeln!(file, "{comment_line}")?;
+    writeln!(file, "{command_line}")?;
 
     Ok(format!("Auto-restore enabled in {}", rc_file.display()))
 }
@@ -81,10 +98,10 @@ pub fn execute_disable() -> TrexResult<String> {
             continue;
         }
         let content = fs::read_to_string(&rc_file)?;
-        if content.contains(HOOK_LINE) {
+        if content.lines().any(is_hook_line) {
             let filtered: Vec<&str> = content
                 .lines()
-                .filter(|l| !l.contains(HOOK_COMMENT) && !l.contains(HOOK_LINE))
+                .filter(|l| !is_hook_line(l))
                 .collect();
             fs::write(&rc_file, filtered.join("\n") + "\n")?;
             messages.push(format!(
@@ -169,7 +186,8 @@ mod tests {
             let rc_path = std::path::Path::new(&home).join(".zshrc");
             let content = fs::read_to_string(&rc_path).unwrap();
             assert!(content.contains(HOOK_COMMENT));
-            assert!(content.contains(HOOK_LINE));
+            assert!(content.contains("restore --quiet"));
+            assert!(content.lines().any(|l| l.starts_with("[ -x \"")));
         });
     }
 
@@ -196,7 +214,8 @@ mod tests {
             let home = std::env::var("HOME").unwrap();
             let rc_path = std::path::Path::new(&home).join(".bashrc");
             let content = fs::read_to_string(&rc_path).unwrap_or_default();
-            assert!(!content.contains(HOOK_LINE));
+            assert!(!content.contains(HOOK_COMMENT));
+            assert!(!content.contains("restore --quiet"));
         });
     }
 
