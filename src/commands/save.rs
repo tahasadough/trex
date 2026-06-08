@@ -17,6 +17,9 @@ pub fn execute(
 
     storage::ensure_trex_dir()?;
     let ignored = storage::load_ignore_list();
+    // Preserve last-known commands from previous save so that panes whose
+    // application was closed before a re-save still get their commands restored.
+    let prev = storage::load_sessions().unwrap_or_default();
 
     let session_names: Vec<String> = if let Some(n) = name {
         if !tmux.has_session(n)? {
@@ -46,7 +49,7 @@ pub fn execute(
 
         let saved_windows: Vec<SavedWindow> = windows
             .iter()
-            .map(|win| save_window(tmux, name, win))
+            .map(|win| save_window(tmux, name, win, &prev))
             .collect::<TrexResult<_>>()?;
 
         data.sessions.push(SavedSession {
@@ -68,7 +71,12 @@ pub fn execute(
 
 /// # Errors
 /// Returns [`TrexError`] if any tmux command fails.
-fn save_window(tmux: &dyn TmuxClient, session: &str, win: &WindowInfo) -> TrexResult<SavedWindow> {
+fn save_window(
+    tmux: &dyn TmuxClient,
+    session: &str,
+    win: &WindowInfo,
+    prev: &Sessions,
+) -> TrexResult<SavedWindow> {
     let path = tmux.window_path(session, win.index)?;
     let panes = tmux.list_panes(session, win.index)?;
 
@@ -81,6 +89,9 @@ fn save_window(tmux: &dyn TmuxClient, session: &str, win: &WindowInfo) -> TrexRe
             let command = tmux
                 .pane_command(session, win.index, p.index)
                 .unwrap_or(None);
+            let command = command.or_else(|| {
+                previous_pane_command(prev, session, win.index, p.index)
+            });
             SavedPane {
                 index: p.index,
                 path: p.path.clone(),
@@ -100,6 +111,20 @@ fn save_window(tmux: &dyn TmuxClient, session: &str, win: &WindowInfo) -> TrexRe
         path,
         panes: saved_panes,
     })
+}
+
+fn previous_pane_command(
+    prev: &Sessions,
+    session: &str,
+    window_index: u32,
+    pane_index: u32,
+) -> Option<String> {
+    prev.sessions
+        .iter()
+        .find(|s| s.name == session)
+        .and_then(|s| s.windows.iter().find(|w| w.index == window_index))
+        .and_then(|w| w.panes.iter().find(|p| p.index == pane_index))
+        .and_then(|p| p.command.clone().filter(|c| !c.is_empty()))
 }
 
 #[cfg(test)]
