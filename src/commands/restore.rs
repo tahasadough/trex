@@ -97,6 +97,9 @@ fn pass3_send_commands(tmux: &dyn TmuxClient, data: &Sessions, restored: &[Strin
             for pane in &win.panes {
                 if let Some(ref cmd) = pane.command {
                     if !cmd.is_empty() {
+                        // Send Enter first to ensure the shell is at a fresh
+                        // prompt before sending the actual command.
+                        let _ = tmux.send_keys(&session.name, win.index, pane.index, "");
                         let _ = tmux.send_keys(&session.name, win.index, pane.index, cmd);
                     }
                 }
