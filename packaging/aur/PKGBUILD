@@ -1,0 +1,29 @@
+# Maintainer: Taha Sadough <taha@sadough.dev>
+# Contributor: Taha Sadough <taha@sadough.dev>
+
+pkgname=trex
+pkgver=0.7.0
+pkgrel=1
+pkgdesc="Tmux Restore Extreme - persist and restore tmux sessions"
+arch=('x86_64' 'aarch64')
+url="https://github.com/tahasadough/trex"
+license=('MIT')
+depends=('tmux')
+makedepends=()
+provides=("${pkgname}")
+conflicts=()
+
+if [[ "$CARCH" == "x86_64" ]]; then
+  _rust_target="x86_64-unknown-linux-gnu"
+elif [[ "$CARCH" == "aarch64" ]]; then
+  _rust_target="aarch64-unknown-linux-gnu"
+fi
+
+source=("${url}/releases/download/v${pkgver}/${pkgname}-${_rust_target}.tar.gz")
+sha256sums=('SKIP')
+
+package() {
+  install -Dm755 "${srcdir}/${pkgname}" "${pkgdir}/usr/bin/${pkgname}"
+  install -Dm644 "${srcdir}/${pkgname}.1" "${pkgdir}/usr/share/man/man1/${pkgname}.1"
+  install -Dm644 "${srcdir}/../LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

@@ -89,9 +89,8 @@ fn save_window(
             let command = tmux
                 .pane_command(session, win.index, p.index)
                 .unwrap_or(None);
-            let command = command.or_else(|| {
-                previous_pane_command(prev, session, win.index, p.index)
-            });
+            let command =
+                command.or_else(|| previous_pane_command(prev, session, win.index, p.index));
             SavedPane {
                 index: p.index,
                 path: p.path.clone(),

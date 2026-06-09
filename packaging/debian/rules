@@ -1,0 +1,13 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	# Binary is prebuilt — nothing to build.
+
+override_dh_auto_test:
+	# Tests are run upstream — skip.
+
+override_dh_strip:
+	# Binary already stripped — skip.

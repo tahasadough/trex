@@ -51,9 +51,105 @@ jobs:
           name: trex-${{ matrix.target }}
           path: trex-${{ matrix.target }}.tar.gz
 
+  package:
+    name: Package (.deb / .rpm)
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download linux tarballs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: trex-*-unknown-linux-gnu
+          path: artifacts
+
+      - name: Build .deb
+        run: |
+          TARGET="${{ matrix.arch == 'amd64' && 'x86_64' || 'aarch64' }}-unknown-linux-gnu"
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          mkdir -p deb-pkg/DEBIAN deb-pkg/usr/bin deb-pkg/usr/share/man/man1
+
+          tar -xzf "artifacts/trex-${TARGET}/trex-${TARGET}.tar.gz" -C /tmp
+          cp /tmp/trex deb-pkg/usr/bin/
+          cp /tmp/trex.1 deb-pkg/usr/share/man/man1/
+
+          cat > deb-pkg/DEBIAN/control <<EOF
+Package: trex
+Version: ${VERSION}
+Architecture: ${{ matrix.arch }}
+Maintainer: Taha Sadough <taha@sadough.dev>
+Depends: tmux
+Section: utils
+Priority: optional
+Homepage: https://github.com/tahasadough/trex
+License: MIT
+Description: Tmux Restore Extreme - persist and restore tmux sessions
+ Persist your tmux sessions across reboots. Windows, panes,
+ layouts, working directories, session options, and running
+ commands come back exactly as you left them.
+EOF
+
+          dpkg-deb --build deb-pkg "trex_${VERSION}_${{ matrix.arch }}.deb"
+
+      - name: Build .rpm
+        run: |
+          TARGET="${{ matrix.arch == 'amd64' && 'x86_64' || 'aarch64' }}-unknown-linux-gnu"
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          sudo apt-get install -y rpm
+          mkdir -p rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+
+          tar -xzf "artifacts/trex-${TARGET}/trex-${TARGET}.tar.gz" -C /tmp
+          cp /tmp/trex rpmbuild/SOURCES/
+          cp /tmp/trex.1 rpmbuild/SOURCES/
+
+          ARCH="${{ matrix.arch == 'amd64' && 'x86_64' || 'aarch64' }}"
+          cat > rpmbuild/SPECS/trex.spec <<EOF
+Name:       trex
+Version:    ${VERSION}
+Release:    1%{?dist}
+Summary:    Tmux Restore Extreme
+License:    MIT
+URL:        https://github.com/tahasadough/trex
+Source0:    trex
+Source1:    trex.1
+Requires:   tmux
+
+%description
+Persist your tmux sessions across reboots.
+
+%install
+install -Dm755 %{SOURCE0} %{buildroot}%{_bindir}/trex
+install -Dm644 %{SOURCE1} %{buildroot}%{_mandir}/man1/trex.1
+
+%files
+%{_bindir}/trex
+%{_mandir}/man1/trex.1*
+EOF
+
+          rpmbuild -bb --define "_topdir ${PWD}/rpmbuild" \
+            --target "${ARCH}" \
+            rpmbuild/SPECS/trex.spec
+
+          cp rpmbuild/RPMS/${ARCH}/trex-${VERSION}-1.*.rpm \
+            "trex-${VERSION}-1.${{ matrix.arch }}.rpm"
+
+      - name: Upload packages as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.arch }}
+          path: |
+            trex_*.deb
+            trex-*.rpm
+
   release:
     name: Create Release
-    needs: build
+    needs: [build, package]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -63,8 +159,20 @@ jobs:
         with:
           path: artifacts
 
+      - name: Generate checksums
+        run: |
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.deb' -o -name '*.rpm' \) -exec sh -c '
+            for f do
+              sha256sum "$f"
+            done
+          ' {} + > artifacts/SHA256SUMS
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*.tar.gz
+          files: |
+            artifacts/**/*.tar.gz
+            artifacts/**/*.deb
+            artifacts/**/*.rpm
+            artifacts/SHA256SUMS
           generate_release_notes: true

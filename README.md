@@ -6,26 +6,22 @@ Persist your tmux sessions across reboots. Windows, panes, layouts, working dire
 
 ## Install
 
-### Prebuilt binary (recommended — no Rust needed)
+### Package managers
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/tahasadough/trex/main/install.sh | bash
-```
-
-Or clone and run the installer:
-
-```sh
-git clone https://github.com/tahasadough/trex.git && cd trex
-chmod +x install.sh && ./install.sh
-```
-
-The installer detects your platform, downloads the correct binary from GitHub Releases, and falls back to building from source if no prebuilt binary is available. It extracts the binary and man page to `~/.local/bin/` and `~/.local/share/man/man1/`, adds `trex` to `PATH`, and optionally sets up a systemd user service for auto-restore on login.
+| Platform | Manager | Command |
+|---|---|---|
+| **Arch Linux** | AUR (yay/paru) | `yay -S trex` |
+| **macOS / Linux** | Homebrew | `brew install tahasadough/trex/trex` |
+| **Ubuntu / Debian** | APT (PPA) | `sudo add-apt-repository ppa:tahasadough/trex && sudo apt update && sudo apt install trex` |
+| **Fedora** | DNF (COPR) | `sudo dnf copr enable tahasadough/trex && sudo dnf install trex` |
 
 ### From source (requires Rust toolchain)
 
 ```sh
 cargo install --git https://github.com/tahasadough/trex
 ```
+
+> The `.deb` and `.rpm` packages are attached to each [GitHub Release](https://github.com/tahasadough/trex/releases) for manual download. The PPA and COPR repositories are still being set up — watch the repo for announcements.
 
 ## Requirements
 
@@ -69,12 +65,6 @@ Both use `--quiet` so you never see output during startup.
 `trex save` serializes every session, window, and pane (names, layouts, directories, options, active panes, running commands) to a JSON file at `$XDG_DATA_HOME/trex/sessions.json`. `trex restore` rebuilds the session tree in three passes: (1) create sessions and split panes, (2) apply layouts and options, (3) re-issue saved commands via `tmux send-keys`.
 
 ## Uninstall
-
-```sh
-chmod +x uninstall.sh && ./uninstall.sh
-```
-
-Or manually:
 
 ```sh
 trex auto disable                                  # remove shell hooks & systemd service
