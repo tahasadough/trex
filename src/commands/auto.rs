@@ -4,9 +4,6 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{TrexError, TrexResult};
 
-#[cfg(target_os = "macos")]
-const LAUNCHD_LABEL: &str = "com.tahasadough.trex";
-
 const HOOK_COMMENT: &str = "# trex: auto-restore tmux sessions";
 
 fn hook_lines(exe_path: &Path) -> [String; 2] {
@@ -64,8 +61,9 @@ fn detect_rc() -> PathBuf {
 /// Returns [`TrexError`] if the rc file cannot be read or appended to,
 /// or if the trex binary path cannot be resolved.
 pub fn execute_enable() -> TrexResult<String> {
-    let exe_path = std::env::current_exe()
-        .map_err(|e| TrexError::Generic(format!("Cannot determine trex binary path: {e}")))?;
+    let exe_path = std::env::current_exe().map_err(|e| {
+        TrexError::Generic(format!("Cannot determine trex binary path: {e}"))
+    })?;
     let [comment_line, command_line] = hook_lines(&exe_path);
 
     let rc_file = detect_rc();
@@ -87,12 +85,7 @@ pub fn execute_enable() -> TrexResult<String> {
     writeln!(file, "{comment_line}")?;
     writeln!(file, "{command_line}")?;
 
-    let msg = format!("Auto-restore enabled in {}", rc_file.display());
-
-    #[cfg(target_os = "macos")]
-    let msg = format!("{}\n{}", msg, enable_launchd_agent(&exe_path));
-
-    Ok(msg)
+    Ok(format!("Auto-restore enabled in {}", rc_file.display()))
 }
 
 /// # Errors
@@ -106,7 +99,10 @@ pub fn execute_disable() -> TrexResult<String> {
         }
         let content = fs::read_to_string(&rc_file)?;
         if content.lines().any(is_hook_line) {
-            let filtered: Vec<&str> = content.lines().filter(|l| !is_hook_line(l)).collect();
+            let filtered: Vec<&str> = content
+                .lines()
+                .filter(|l| !is_hook_line(l))
+                .collect();
             fs::write(&rc_file, filtered.join("\n") + "\n")?;
             messages.push(format!(
                 "Auto-restore disabled (removed from {})",
@@ -116,9 +112,6 @@ pub fn execute_disable() -> TrexResult<String> {
     }
 
     disable_systemd_service(&mut messages);
-
-    #[cfg(target_os = "macos")]
-    disable_launchd_agent(&mut messages);
 
     if messages.is_empty() {
         Ok("No auto-restore configuration found.".to_string())
@@ -148,71 +141,6 @@ fn disable_systemd_service(messages: &mut Vec<String>) {
 
 #[cfg(not(target_os = "linux"))]
 fn disable_systemd_service(_messages: &mut Vec<String>) {}
-
-#[cfg(target_os = "macos")]
-fn launchd_plist_path() -> PathBuf {
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join("Library/LaunchAgents/com.tahasadough.trex.plist")
-}
-
-#[cfg(target_os = "macos")]
-fn plist_content(exe_path: &Path) -> String {
-    let exe = exe_path.to_string_lossy();
-    format!(
-        r#"<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>{LAUNCHD_LABEL}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{exe}</string>
-        <string>restore</string>
-        <string>--quiet</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <false/>
-</dict>
-</plist>
-"#,
-    )
-}
-
-#[cfg(target_os = "macos")]
-fn enable_launchd_agent(exe_path: &Path) -> String {
-    let plist_path = launchd_plist_path();
-
-    if let Some(parent) = plist_path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-
-    let _ = fs::write(&plist_path, plist_content(exe_path));
-    let _ = std::process::Command::new("launchctl")
-        .args(["load", &plist_path.to_string_lossy()])
-        .output();
-
-    format!("Launchd agent installed at {}", plist_path.display())
-}
-
-#[cfg(target_os = "macos")]
-fn disable_launchd_agent(messages: &mut Vec<String>) {
-    let plist_path = launchd_plist_path();
-
-    if !plist_path.exists() {
-        return;
-    }
-
-    let _ = std::process::Command::new("launchctl")
-        .args(["unload", &plist_path.to_string_lossy()])
-        .output();
-
-    let _ = fs::remove_file(&plist_path);
-
-    messages.push("Launchd auto-restore agent disabled".to_string());
-}
 
 #[cfg(test)]
 mod tests {
@@ -303,31 +231,5 @@ mod tests {
                 std::path::Path::new(&home).join(".config/systemd/user/trex.service")
             );
         });
-    }
-
-    #[serial]
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn launchd_plist_path_is_in_launch_agents() {
-        with_temp_home(|| {
-            let home = std::env::var("HOME").unwrap();
-            let path = launchd_plist_path();
-            assert_eq!(
-                path,
-                std::path::Path::new(&home).join("Library/LaunchAgents/com.tahasadough.trex.plist")
-            );
-        });
-    }
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn plist_content_contains_exe_path() {
-        let exe = std::path::Path::new("/opt/local/bin/trex");
-        let content = plist_content(exe);
-        assert!(content.contains("/opt/local/bin/trex"));
-        assert!(content.contains("com.tahasadough.trex"));
-        assert!(content.contains("restore"));
-        assert!(content.contains("--quiet"));
-        assert!(content.contains("RunAtLoad"));
     }
 }

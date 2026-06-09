@@ -1,15 +1,13 @@
 #[path = "common/mod.rs"]
 mod common;
 
-use common::create_test_tarball;
 use common::with_http_server;
 use serial_test::serial;
 
 #[serial]
 #[test]
-fn update_succeeds_with_valid_tarball() {
-    let tarball = create_test_tarball(b"#!/usr/bin/env bash\nexit 0\n");
-    with_http_server(&tarball, 200, |url| {
+fn update_succeeds_with_valid_script() {
+    with_http_server("#!/usr/bin/env bash\nexit 0\n", 200, |url| {
         let prev = std::env::var("TREX_UPDATE_URL").ok();
         std::env::set_var("TREX_UPDATE_URL", url);
         let result = trex::commands::update::execute();
@@ -24,8 +22,8 @@ fn update_succeeds_with_valid_tarball() {
 
 #[serial]
 #[test]
-fn update_fails_with_invalid_tarball() {
-    with_http_server(b"not a valid tarball", 200, |url| {
+fn update_fails_when_script_exits_with_error() {
+    with_http_server("#!/usr/bin/env bash\nexit 1\n", 200, |url| {
         let prev = std::env::var("TREX_UPDATE_URL").ok();
         std::env::set_var("TREX_UPDATE_URL", url);
         let result = trex::commands::update::execute();
@@ -34,10 +32,12 @@ fn update_fails_with_invalid_tarball() {
             None => std::env::remove_var("TREX_UPDATE_URL"),
         }
         assert!(result.is_err());
-        let err = result.as_ref().unwrap_err().to_string();
         assert!(
-            err.contains("Failed to extract"),
-            "expected 'Failed to extract' in error message, got: {err}",
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("exited with an error"),
+            "expected 'exited with an error' in error message"
         );
     });
 }
@@ -57,7 +57,7 @@ fn update_fails_when_url_is_unreachable() {
         result
             .unwrap_err()
             .to_string()
-            .contains("Failed to download"),
-        "expected 'Failed to download' in error message"
+            .contains("Failed to fetch"),
+        "expected 'Failed to fetch' in error message"
     );
 }

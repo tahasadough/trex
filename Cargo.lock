@@ -1225,7 +1225,7 @@ dependencies = [
 
 [[package]]
 name = "trex"
-version = "0.7.0"
+version = "0.6.18"
 dependencies = [
  "chrono",
  "clap",
